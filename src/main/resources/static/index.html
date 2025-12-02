@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rutgers Sniper 🎯</title>
+    <style>
+        body { font-family: -apple-system, system-ui, sans-serif; background: #1a1a1a; color: #fff; display: flex; justify-content: center; padding-top: 50px; }
+        .container { width: 400px; background: #2d2d2d; padding: 20px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        h1 { text-align: center; color: #cc0033; margin-bottom: 20px; } /* Rutgers Red */
+        
+        /* Input Group Styling */
+        .input-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-size: 12px; color: #aaa; }
+        input { width: 93%; padding: 12px; border-radius: 6px; border: 1px solid #404040; background: #404040; color: white; font-size: 16px; outline: none; transition: 0.2s; }
+        input:focus { border-color: #cc0033; background: #4a4a4a; }
+        
+        button { width: 100%; padding: 12px; background: #cc0033; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 16px; transition: 0.2s; margin-top: 10px; }
+        button:hover { background: #e60039; }
+        
+        ul { list-style: none; padding: 0; margin-top: 20px; }
+        li { background: #404040; margin-bottom: 10px; padding: 15px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+        
+        .status { font-size: 12px; padding: 4px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .closed { background: #555; color: #aaa; }
+        .open { background: #2ecc71; color: #fff; font-weight: bold; animation: pulse 2s infinite; }
+        
+        .del-btn { background: transparent; color: #ff4444; width: auto; padding: 5px 10px; font-size: 20px; line-height: 1; margin-top: 0; cursor: pointer; }
+        .del-btn:hover { background: rgba(255, 68, 68, 0.1); border-radius: 4px; }
+        
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🎯 Rutgers Sniper</h1>
+    
+    <div class="input-group">
+        <label>Course Index Number</label>
+        <input type="text" id="index" placeholder="e.g. 03608" maxlength="5">
+    </div>
+
+    <div class="input-group">
+        <label>Your Phone Number</label>
+        <input type="tel" id="phone" placeholder="e.g. 9085551234">
+    </div>
+
+    <button onclick="addSection()">Start Watching</button>
+
+    <h3 style="margin-top: 30px; border-bottom: 1px solid #444; padding-bottom: 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #888;">Active Targets</h3>
+    <ul id="targetList"></ul>
+</div>
+
+<script>
+    const API_URL = '/api/sections';
+
+    // Allow pressing "Enter" to submit
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') addSection();
+    });
+
+    // 1. Load data
+    async function loadSections() {
+        try {
+            const res = await fetch(API_URL);
+            const sections = await res.json();
+            const list = document.getElementById('targetList');
+            list.innerHTML = ''; 
+
+            if(sections.length === 0) {
+                list.innerHTML = '<div style="text-align:center; color:#666; padding:20px; font-style:italic;">No active snipes. Add one above!</div>';
+                return;
+            }
+
+            sections.forEach(s => {
+                const li = document.createElement('li');
+                const statusClass = s.open ? 'open' : 'closed';
+                const statusText = s.open ? 'OPEN!' : 'CLOSED';
+                
+                // Make the phone number look pretty in the list
+                const prettyPhone = s.userContact.replace(/(\+1)(\d{3})(\d{3})(\d{4})/, '($2) $3-$4');
+
+                li.innerHTML = `
+                    <div>
+                        <strong style="font-size: 18px; color: #fff;">#${s.sectionIndex}</strong><br>
+                        <span style="font-size: 12px; color: #888;">${prettyPhone}</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span class="status ${statusClass}">${statusText}</span>
+                        <button class="del-btn" onclick="deleteSection(${s.id})" title="Stop Watching">×</button>
+                    </div>
+                `;
+                list.appendChild(li);
+            });
+        } catch (e) {
+            console.error("Error loading sections:", e);
+        }
+    }
+
+    // 2. Add section with SMART formatting
+    async function addSection() {
+        const indexInput = document.getElementById('index');
+        const phoneInput = document.getElementById('phone');
+        
+        const index = indexInput.value.trim();
+        let rawPhone = phoneInput.value;
+
+        // Strip out anything that isn't a number (spaces, dashes, parens)
+        // e.g., "(908) 555-1234" becomes "9085551234"
+        const cleanPhone = rawPhone.replace(/\D/g, '');
+
+        if(!index || index.length < 5) return alert("Please enter a valid 5-digit Course Index.");
+        
+        // Validation: US numbers must be 10 digits
+        if (cleanPhone.length !== 10) {
+            return alert("Please enter a valid 10-digit phone number (e.g. 9085551234).");
+        }
+
+        // Auto-add the +1 for Twilio
+        const formattedPhone = '+1' + cleanPhone;
+
+        await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sectionIndex: index, userContact: formattedPhone })
+        });
+
+        // Clear inputs and reload
+        indexInput.value = '';
+        phoneInput.value = '';
+        loadSections();
+    }
+
+    async function deleteSection(id) {
+        if(!confirm("Stop watching this section?")) return;
+        await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+        loadSections();
+    }
+
+    loadSections();
+</script>
+
+</body>
+</html>
