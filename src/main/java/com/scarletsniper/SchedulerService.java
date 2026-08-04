@@ -17,6 +17,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,18 +30,29 @@ public class SchedulerService {
 
     private static final Logger log = LoggerFactory.getLogger(SchedulerService.class);
 
-    private static final String USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36";
+    // Identifies the app honestly. A spoofed browser UA was verified to make
+    // no difference to this endpoint (byte-identical responses), so there's
+    // nothing to gain by pretending to be Chrome.
+    private static final String USER_AGENT = "ScarletSniper/1.0 (+https://github.com/Aryaasd/scarlet-sniper)";
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    // classes.rutgers.edu is where sis.rutgers.edu 302-redirects to; going
+    // straight there saves a redirect hop on every poll.
+    private static final String COURSES_URL =
+            "https://classes.rutgers.edu/soc/api/courses.json?year=%d&term=%s&campus=%s&subject=%s";
+
+    // How long an unconfirmed watch may sit before it's reaped.
+    static final Duration UNCONFIRMED_TTL = Duration.ofHours(24);
+
     private final ObjectMapper mapper = new ObjectMapper();
 
     private final SectionRepository repository;
     private final SmsService smsService;
+    private final RestTemplate restTemplate;
 
-    public SchedulerService(SectionRepository repository, SmsService smsService) {
+    public SchedulerService(SectionRepository repository, SmsService smsService, RestTemplate restTemplate) {
         this.repository = repository;
         this.smsService = smsService;
+        this.restTemplate = restTemplate;
     }
 
     // Every tracked section carries its own subject/term/year/campus, so
@@ -59,7 +72,20 @@ public class SchedulerService {
         }
     }
 
-    private void checkOneQuery(CourseQuery query, List<TrackedSection> tracked) {
+    // Registrations that never completed verification would otherwise poll
+    // Rutgers forever. Package-private for direct testing.
+    @Scheduled(fixedRate = 3600000)
+    void reapAbandonedUnconfirmedSections() {
+        Instant cutoff = Instant.now().minus(UNCONFIRMED_TTL);
+        List<TrackedSection> stale = repository.findByConfirmedFalseAndCreatedAtBefore(cutoff);
+        if (stale.isEmpty()) return;
+        repository.deleteAll(stale);
+        log.info("Reaped {} unconfirmed watch(es) older than {}", stale.size(), UNCONFIRMED_TTL);
+    }
+
+    // Package-private so a failure in one query can be shown not to affect
+    // the others.
+    void checkOneQuery(CourseQuery query, List<TrackedSection> tracked) {
         try {
             JsonNode allCourses = fetchCourses(query);
             Map<String, Boolean> openBySectionIndex = indexOpenStatus(allCourses);
@@ -80,13 +106,19 @@ public class SchedulerService {
         }
     }
 
-    private Map<String, Boolean> indexOpenStatus(JsonNode allCourses) {
+    // Package-private for testing. Tolerates malformed entries rather than
+    // letting one bad section abort the whole response.
+    Map<String, Boolean> indexOpenStatus(JsonNode allCourses) {
         Map<String, Boolean> result = new HashMap<>();
+        if (allCourses == null || !allCourses.isArray()) return result;
         for (JsonNode course : allCourses) {
             JsonNode sections = course.get("sections");
-            if (sections == null) continue;
+            if (sections == null || !sections.isArray()) continue;
             for (JsonNode section : sections) {
-                result.put(section.get("index").asText(), section.get("openStatus").asBoolean());
+                JsonNode index = section.get("index");
+                JsonNode openStatus = section.get("openStatus");
+                if (index == null || openStatus == null) continue;
+                result.put(index.asText(), openStatus.asBoolean());
             }
         }
         return result;
@@ -104,8 +136,15 @@ public class SchedulerService {
                 return;
             }
             log.info("SNIPER ALERT: {} is OPEN!", tracked.getSectionIndex());
-            smsService.sendSms(tracked.getUserContact(),
+            boolean sent = smsService.sendSms(tracked.getUserContact(),
                     "ScarletSniper: Section " + tracked.getSectionIndex() + " is OPEN! Go register!");
+            if (!sent) {
+                // Leave isOpen false and persist nothing, so the next poll
+                // retries instead of silently recording an alert that never
+                // reached anyone.
+                log.warn("Alert for section {} failed to send — will retry next poll.", tracked.getSectionIndex());
+                return;
+            }
             tracked.setOpen(true);
             repository.save(tracked);
         } else if (!isCurrentlyOpen && tracked.isOpen()) {
@@ -115,9 +154,10 @@ public class SchedulerService {
         }
     }
 
-    private JsonNode fetchCourses(CourseQuery query) throws IOException {
-        String url = "https://sis.rutgers.edu/soc/api/courses.json?year=%d&term=%s&campus=%s&subject=%s"
-                .formatted(query.year(), query.term(), query.campus(), query.subject());
+    // Package-private for testing. Handles both gzipped and plain responses —
+    // the live endpoint returns gzip.
+    JsonNode fetchCourses(CourseQuery query) throws IOException {
+        String url = COURSES_URL.formatted(query.year(), query.term(), query.campus(), query.subject());
 
         HttpHeaders headers = new HttpHeaders();
         headers.add("User-Agent", USER_AGENT);
@@ -125,7 +165,7 @@ public class SchedulerService {
         ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.GET, entity, byte[].class);
 
         byte[] payload = response.getBody();
-        if (payload == null) return mapper.createArrayNode();
+        if (payload == null || payload.length == 0) return mapper.createArrayNode();
 
         String jsonString;
         if (payload.length > 2 && payload[0] == (byte) 0x1f && payload[1] == (byte) 0x8b) {
@@ -138,7 +178,7 @@ public class SchedulerService {
         return mapper.readTree(jsonString);
     }
 
-    private record CourseQuery(int year, String term, String campus, String subject) {
+    record CourseQuery(int year, String term, String campus, String subject) {
         static CourseQuery from(TrackedSection s) {
             return new CourseQuery(s.getYear(), s.getTerm(), s.getCampus(), s.getSubject());
         }

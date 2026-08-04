@@ -32,7 +32,12 @@ public class SmsService {
         }
     }
 
-    public void sendSms(String toPhone, String messageBody) {
+    /**
+     * @return true only if Twilio accepted the message. Callers must not
+     * treat a send as delivered without checking — a swallowed failure
+     * here previously meant an alert was marked sent and never retried.
+     */
+    public boolean sendSms(String toPhone, String messageBody) {
         try {
             Message.creator(
                 new PhoneNumber(toPhone),
@@ -40,8 +45,10 @@ public class SmsService {
                 messageBody
             ).create();
             log.info("SMS sent to {}", toPhone);
+            return true;
         } catch (Exception e) {
             log.error("Failed to send SMS to {}: {}", toPhone, e.getMessage());
+            return false;
         }
     }
 }
