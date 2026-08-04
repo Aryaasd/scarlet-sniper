@@ -10,8 +10,8 @@
     <groupId>com.rutgers</groupId>
     <artifactId>sniper</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>sniper</name>
-    <description>Demo project for Spring Boot</description>
+    <name>ScarletSniper</name>
+    <description>Watches Rutgers Schedule-of-Classes sections and texts you the moment a closed one opens up.</description>
     <url/>
     <licenses>
         <license/>

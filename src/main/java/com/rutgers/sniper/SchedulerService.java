@@ -105,7 +105,7 @@ public class SchedulerService {
             }
             log.info("SNIPER ALERT: {} is OPEN!", tracked.getSectionIndex());
             smsService.sendSms(tracked.getUserContact(),
-                    "RUTGERS SNIPER: Class " + tracked.getSectionIndex() + " is OPEN! Go register!");
+                    "ScarletSniper: Section " + tracked.getSectionIndex() + " is OPEN! Go register!");
             tracked.setOpen(true);
             repository.save(tracked);
         } else if (!isCurrentlyOpen && tracked.isOpen()) {

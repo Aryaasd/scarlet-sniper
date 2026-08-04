@@ -1,8 +1,14 @@
-# 🎯 Rutgers Course Sniper
+<p align="center">
+  <img src="docs/logo.svg" width="88" height="88" alt="ScarletSniper logo">
+</p>
 
-[![CI](https://github.com/Aryaasd/rutgers-course-sniper/actions/workflows/ci.yml/badge.svg)](https://github.com/Aryaasd/rutgers-course-sniper/actions/workflows/ci.yml)
+<h1 align="center">ScarletSniper</h1>
 
-A Java Spring Boot service that watches Rutgers Schedule-of-Classes sections and sends a real-time SMS via Twilio the moment a closed section opens up.
+<p align="center">
+  <a href="https://github.com/Aryaasd/rutgers-course-sniper/actions/workflows/ci.yml"><img src="https://github.com/Aryaasd/rutgers-course-sniper/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
+
+<p align="center">A Java Spring Boot service that watches Rutgers Schedule-of-Classes sections and sends a real-time SMS the moment a closed section opens up.</p>
 
 ![Demo of adding, tracking, and removing a watched section](docs/demo.gif)
 
