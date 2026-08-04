@@ -2,6 +2,8 @@
 
 A Java Spring Boot service that monitors course availability at Rutgers University. It polls the Rutgers Schedule of Classes API for specific course sections and sends a real-time SMS via Twilio the moment a closed section opens up.
 
+![Demo of adding, tracking, and removing a watched section](docs/demo.gif)
+
 ---
 
 ## 🚀 Features
