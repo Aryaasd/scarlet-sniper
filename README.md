@@ -1,6 +1,8 @@
 # 🎯 Rutgers Course Sniper
 
-A Java Spring Boot service that monitors course availability at Rutgers University. It polls the Rutgers Schedule of Classes API for specific course sections and sends a real-time SMS via Twilio the moment a closed section opens up.
+[![CI](https://github.com/Aryaasd/rutgers-course-sniper/actions/workflows/ci.yml/badge.svg)](https://github.com/Aryaasd/rutgers-course-sniper/actions/workflows/ci.yml)
+
+A Java Spring Boot service that watches Rutgers Schedule-of-Classes sections and sends a real-time SMS via Twilio the moment a closed section opens up.
 
 ![Demo of adding, tracking, and removing a watched section](docs/demo.gif)
 
@@ -8,9 +10,11 @@ A Java Spring Boot service that monitors course availability at Rutgers Universi
 
 ## 🚀 Features
 
-* **Automated sniping:** Periodically polls the Rutgers Schedule of Classes API to check section status.
-* **Database persistence:** Stores tracking requests and course metadata in PostgreSQL.
-* **SMS notifications:** Integrates with Twilio to send instant alerts when a course opens.
+* **Automated sniping:** Polls the Rutgers Schedule of Classes API for any subject/term/year/campus combination currently being tracked — not hardcoded to one department.
+* **Database persistence:** Stores tracking requests in PostgreSQL, schema-managed by Flyway.
+* **SMS notifications:** Integrates with Twilio to send instant alerts when a section opens.
+* **Owner-scoped API:** Each watch is protected by a token issued at creation time — nobody else can see it or delete it, and listing without a token returns nothing.
+* **Abuse throttling:** New watches are rate-limited per IP.
 * **Memory optimized:** Tuned to run in containerized environments (like Railway) under strict memory limits.
 
 ---
@@ -21,10 +25,11 @@ A Java Spring Boot service that monitors course availability at Rutgers Universi
 | --- | --- |
 | Language | Java 21 |
 | Framework | Spring Boot 3 |
-| Database | PostgreSQL (Hibernate/JPA) |
+| Database | PostgreSQL (Hibernate/JPA), schema via Flyway |
 | Notifications | Twilio SDK |
 | Build | Maven |
-| Deployment | Docker / Railway |
+| CI | GitHub Actions |
+| Deployment | Railway |
 
 ---
 
@@ -67,40 +72,61 @@ Create `src/main/resources/application-local.properties` with your own H2 and Tw
 
 To run against a real PostgreSQL database instead, export the environment variables from the table above and run `./mvnw spring-boot:run`.
 
+**3. Run the tests**
+
+```bash
+./mvnw test
+```
+
 ---
 
-## 📡 Usage
+## 📡 API
 
-Sections are registered through the REST API at `/api`.
+Sections are registered through the REST API at `/api`. Every watch is protected by an **owner token** issued when you create it — hold onto it, it's the only way to list or delete that watch later, and it is never sent back to you again after creation.
 
 **Start watching a section**
 
 ```bash
 curl -X POST http://localhost:8080/api/sections \
   -H "Content-Type: application/json" \
-  -d '{"sectionIndex": "08278", "userContact": "+15555550123"}'
+  -d '{"sectionIndex": "03608", "userContact": "+15555550123"}'
 ```
 
-**List everything being watched**
+```json
+{
+  "section": { "id": 1, "sectionIndex": "03608", "subject": "198", "term": "9", "year": 2025, "campus": "NB", "userContact": "+15555550123", "open": false },
+  "ownerToken": "6a9b3e6c-1c09-4ab0-9b31-57ac2d55d334"
+}
+```
+
+`subject`, `term`, `year`, and `campus` are optional and default to Fall 2025 Computer Science at New Brunswick (`198` / `9` / `2025` / `NB`) — pass your own to track a section in any other department or term. Creation is rate-limited to 5 new watches per IP per 10 minutes.
+
+**List your own watched sections**
+
+Requires the token(s) you were given at creation, comma-separated if you're tracking more than one. No token, no data — this endpoint never returns other people's watches.
 
 ```bash
-curl http://localhost:8080/api/sections
+curl http://localhost:8080/api/sections \
+  -H "X-Owner-Tokens: 6a9b3e6c-1c09-4ab0-9b31-57ac2d55d334"
 ```
 
 **Stop watching a section**
 
+Requires the matching owner token, or the delete is rejected with `403`.
+
 ```bash
-curl -X DELETE http://localhost:8080/api/sections/1
+curl -X DELETE http://localhost:8080/api/sections/1 \
+  -H "X-Owner-Token: 6a9b3e6c-1c09-4ab0-9b31-57ac2d55d334"
 ```
 
-Once a section is registered, the scheduler polls it automatically and texts `userContact` when it opens.
+Once a section is registered, the scheduler polls its subject/term/year/campus combination automatically and texts `userContact` when it opens.
 
 ---
 
 ## ☁️ Deployment (Railway)
 
 1. **Connect GitHub:** Link this repository to a new Railway service.
-2. **Add a database:** Add a PostgreSQL service in Railway.
+2. **Add a database:** Add a PostgreSQL service in Railway. Flyway applies the schema automatically on first boot.
 3. **Set variables:** Railway provides the database connection automatically, but you must add your Twilio credentials in the **Variables** tab.
 4. **Cap the heap:** To prevent Out-Of-Memory crashes on smaller tiers, add:
 
