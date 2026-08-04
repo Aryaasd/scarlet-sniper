@@ -2,6 +2,8 @@ package com.scarletsniper.controller;
 
 import com.scarletsniper.PhoneVerificationService;
 import com.scarletsniper.RutgersDefaults;
+import com.scarletsniper.SectionValidator;
+import com.scarletsniper.SlidingWindowLimiter;
 import com.scarletsniper.dto.SectionCreateRequest;
 import com.scarletsniper.dto.SectionCreatedResponse;
 import com.scarletsniper.dto.VerifyCodeRequest;
@@ -16,13 +18,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 @RequestMapping("/api")
@@ -30,16 +28,24 @@ public class SniperController {
 
     private static final Logger log = LoggerFactory.getLogger(SniperController.class);
 
-    private static final int MAX_CREATES_PER_WINDOW = 5;
-    private static final Duration RATE_LIMIT_WINDOW = Duration.ofMinutes(10);
+    private static final int MAX_CREATES_PER_IP = 5;
+    private static final Duration CREATE_WINDOW = Duration.ofMinutes(10);
+
+    // Stricter than the per-IP limit: a single phone number has no
+    // legitimate reason to receive many verification texts in a row, and
+    // per-IP alone doesn't stop someone spreading requests across networks.
+    private static final int MAX_CREATES_PER_PHONE = 3;
+    private static final Duration PHONE_WINDOW = Duration.ofHours(1);
+
+    private static final int MAX_VERIFY_ATTEMPTS = 5;
+    private static final Duration VERIFY_WINDOW = Duration.ofMinutes(15);
 
     private final SectionRepository repository;
     private final PhoneVerificationService verificationService;
 
-    // Simple in-memory per-IP throttle on section creation. Good enough for
-    // a single-instance deployment; wouldn't survive a horizontally-scaled
-    // one, but this app doesn't run as more than one instance.
-    private final Map<String, Deque<Instant>> creationTimestampsByIp = new ConcurrentHashMap<>();
+    private final SlidingWindowLimiter createsByIp = new SlidingWindowLimiter(MAX_CREATES_PER_IP, CREATE_WINDOW);
+    private final SlidingWindowLimiter createsByPhone = new SlidingWindowLimiter(MAX_CREATES_PER_PHONE, PHONE_WINDOW);
+    private final SlidingWindowLimiter verifyAttempts = new SlidingWindowLimiter(MAX_VERIFY_ATTEMPTS, VERIFY_WINDOW);
 
     public SniperController(SectionRepository repository, PhoneVerificationService verificationService) {
         this.repository = repository;
@@ -68,23 +74,37 @@ public class SniperController {
     public ResponseEntity<SectionCreatedResponse> addSection(
             @RequestBody SectionCreateRequest request, HttpServletRequest httpRequest) {
 
-        if (isRateLimited(httpRequest.getRemoteAddr())) {
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
-        }
-        if (isBlank(request.sectionIndex()) || isBlank(request.userContact())) {
+        String sectionIndex = trimOrNull(request.sectionIndex());
+        String userContact = trimOrNull(request.userContact());
+        String subject = defaultIfBlank(request.subject(), RutgersDefaults.SUBJECT);
+        String term = defaultIfBlank(request.term(), RutgersDefaults.TERM);
+        String campus = defaultIfBlank(request.campus(), RutgersDefaults.CAMPUS);
+        Integer year = request.year() != null ? request.year() : RutgersDefaults.YEAR;
+
+        if (!SectionValidator.isValidSectionIndex(sectionIndex)
+                || !SectionValidator.isValidPhone(userContact)
+                || !SectionValidator.isValidSubject(subject)
+                || !SectionValidator.isValidTerm(term)
+                || !SectionValidator.isValidCampus(campus)
+                || !SectionValidator.isValidYear(year)) {
             return ResponseEntity.badRequest().build();
         }
 
+        if (createsByIp.isLimited(httpRequest.getRemoteAddr()) || createsByPhone.isLimited(userContact)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
+        }
+
         TrackedSection section = new TrackedSection();
-        section.setSectionIndex(request.sectionIndex().trim());
-        section.setUserContact(request.userContact().trim());
-        section.setSubject(defaultIfBlank(request.subject(), RutgersDefaults.SUBJECT));
-        section.setTerm(defaultIfBlank(request.term(), RutgersDefaults.TERM));
-        section.setCampus(defaultIfBlank(request.campus(), RutgersDefaults.CAMPUS));
-        section.setYear(request.year() != null ? request.year() : RutgersDefaults.YEAR);
+        section.setSectionIndex(sectionIndex);
+        section.setUserContact(userContact);
+        section.setSubject(subject);
+        section.setTerm(term);
+        section.setCampus(campus);
+        section.setYear(year);
         section.setOpen(false);
         section.setConfirmed(!verificationService.isEnabled());
         section.setOwnerToken(UUID.randomUUID().toString());
+        section.setCreatedAt(Instant.now());
 
         TrackedSection saved = repository.save(section);
         log.info("New watch registered: section {} ({} {} {} {})", saved.getSectionIndex(),
@@ -104,7 +124,8 @@ public class SniperController {
     }
 
     // Confirms a watch's phone number. Required before it will ever be
-    // texted. Idempotent once confirmed.
+    // texted. Idempotent once confirmed, and throttled so a 6-digit code
+    // can't simply be guessed by whoever holds the owner token.
     @PostMapping("/sections/{id}/verify")
     public ResponseEntity<Void> verifySection(
             @PathVariable Long id,
@@ -119,15 +140,20 @@ public class SniperController {
                     if (section.isConfirmed()) {
                         return ResponseEntity.noContent().<Void>build();
                     }
-                    if (isBlank(request.code())) {
+                    String code = trimOrNull(request.code());
+                    if (!SectionValidator.isValidVerifyCode(code)) {
                         return ResponseEntity.badRequest().<Void>build();
                     }
-                    boolean valid = verificationService.checkCode(section.getUserContact(), request.code().trim());
-                    if (!valid) {
+                    if (verifyAttempts.isLimited(String.valueOf(id))) {
+                        log.warn("Verification attempts exhausted for section {}", id);
+                        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).<Void>build();
+                    }
+                    if (!verificationService.checkCode(section.getUserContact(), code)) {
                         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).<Void>build();
                     }
                     section.setConfirmed(true);
                     repository.save(section);
+                    verifyAttempts.reset(String.valueOf(id));
                     log.info("Section {} verified", section.getSectionIndex());
                     return ResponseEntity.noContent().<Void>build();
                 })
@@ -148,11 +174,16 @@ public class SniperController {
                     if (section.isConfirmed()) {
                         return ResponseEntity.status(HttpStatus.CONFLICT).<Void>build();
                     }
+                    if (createsByPhone.isLimited(section.getUserContact())) {
+                        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).<Void>build();
+                    }
                     try {
                         verificationService.sendCode(section.getUserContact());
                     } catch (PhoneVerificationService.VerificationSendException e) {
                         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).<Void>build();
                     }
+                    // A fresh code invalidates any in-flight guessing.
+                    verifyAttempts.reset(String.valueOf(id));
                     return ResponseEntity.noContent().<Void>build();
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());
@@ -176,26 +207,11 @@ public class SniperController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    private boolean isRateLimited(String clientIp) {
-        Instant now = Instant.now();
-        Deque<Instant> timestamps = creationTimestampsByIp.computeIfAbsent(clientIp, k -> new ArrayDeque<>());
-        synchronized (timestamps) {
-            while (!timestamps.isEmpty() && Duration.between(timestamps.peekFirst(), now).compareTo(RATE_LIMIT_WINDOW) > 0) {
-                timestamps.pollFirst();
-            }
-            if (timestamps.size() >= MAX_CREATES_PER_WINDOW) {
-                return true;
-            }
-            timestamps.addLast(now);
-            return false;
-        }
-    }
-
-    private static boolean isBlank(String s) {
-        return s == null || s.isBlank();
+    private static String trimOrNull(String s) {
+        return s == null ? null : s.trim();
     }
 
     private static String defaultIfBlank(String value, String fallback) {
-        return isBlank(value) ? fallback : value.trim();
+        return (value == null || value.isBlank()) ? fallback : value.trim();
     }
 }
