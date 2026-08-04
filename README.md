@@ -5,7 +5,7 @@
 <h1 align="center">ScarletSniper</h1>
 
 <p align="center">
-  <a href="https://github.com/Aryaasd/rutgers-course-sniper/actions/workflows/ci.yml"><img src="https://github.com/Aryaasd/rutgers-course-sniper/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/Aryaasd/scarlet-sniper/actions/workflows/ci.yml"><img src="https://github.com/Aryaasd/scarlet-sniper/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
 <p align="center">A Java Spring Boot service that watches Rutgers Schedule-of-Classes sections and sends a real-time SMS the moment a closed section opens up.</p>
@@ -64,8 +64,8 @@ The application reads all credentials from the environment. Set these in your de
 **1. Clone the repository**
 
 ```bash
-git clone https://github.com/Aryaasd/rutgers-course-sniper.git
-cd rutgers-course-sniper
+git clone https://github.com/Aryaasd/scarlet-sniper.git
+cd scarlet-sniper
 ```
 
 **2. Run it**

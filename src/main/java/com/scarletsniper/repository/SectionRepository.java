@@ -1,6 +1,6 @@
-package com.rutgers.sniper.repository;
+package com.scarletsniper.repository;
 
-import com.rutgers.sniper.model.TrackedSection;
+import com.scarletsniper.model.TrackedSection;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import java.util.List;

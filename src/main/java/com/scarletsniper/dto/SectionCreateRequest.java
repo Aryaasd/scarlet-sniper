@@ -1,4 +1,4 @@
-package com.rutgers.sniper.dto;
+package com.scarletsniper.dto;
 
 /**
  * Client-supplied fields for registering a watch. Deliberately excludes

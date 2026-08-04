@@ -1,4 +1,4 @@
-package com.rutgers.sniper;
+package com.scarletsniper;
 
 /**
  * Default Schedule-of-Classes search parameters applied when a tracked

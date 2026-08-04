@@ -1,4 +1,4 @@
-package com.rutgers.sniper.model;
+package com.scarletsniper.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;

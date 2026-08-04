@@ -1,4 +1,4 @@
-package com.rutgers.sniper;
+package com.scarletsniper;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

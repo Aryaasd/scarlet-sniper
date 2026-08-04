@@ -1,6 +1,6 @@
-package com.rutgers.sniper.dto;
+package com.scarletsniper.dto;
 
-import com.rutgers.sniper.model.TrackedSection;
+import com.scarletsniper.model.TrackedSection;
 
 /**
  * Response for a successful POST /api/sections. The only place ownerToken

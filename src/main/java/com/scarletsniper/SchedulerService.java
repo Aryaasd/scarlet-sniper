@@ -1,7 +1,7 @@
-package com.rutgers.sniper;
+package com.scarletsniper;
 
-import com.rutgers.sniper.model.TrackedSection;
-import com.rutgers.sniper.repository.SectionRepository;
+import com.scarletsniper.model.TrackedSection;
+import com.scarletsniper.repository.SectionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;

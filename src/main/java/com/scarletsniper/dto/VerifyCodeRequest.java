@@ -1,3 +1,3 @@
-package com.rutgers.sniper.dto;
+package com.scarletsniper.dto;
 
 public record VerifyCodeRequest(String code) {}

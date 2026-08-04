@@ -1,4 +1,4 @@
-package com.rutgers.sniper;
+package com.scarletsniper;
 
 import com.twilio.rest.verify.v2.service.Verification;
 import com.twilio.rest.verify.v2.service.VerificationCheck;

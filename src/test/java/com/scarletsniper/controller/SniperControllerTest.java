@@ -1,11 +1,11 @@
-package com.rutgers.sniper.controller;
+package com.scarletsniper.controller;
 
-import com.rutgers.sniper.PhoneVerificationService;
-import com.rutgers.sniper.dto.SectionCreateRequest;
-import com.rutgers.sniper.dto.SectionCreatedResponse;
-import com.rutgers.sniper.dto.VerifyCodeRequest;
-import com.rutgers.sniper.model.TrackedSection;
-import com.rutgers.sniper.repository.SectionRepository;
+import com.scarletsniper.PhoneVerificationService;
+import com.scarletsniper.dto.SectionCreateRequest;
+import com.scarletsniper.dto.SectionCreatedResponse;
+import com.scarletsniper.dto.VerifyCodeRequest;
+import com.scarletsniper.model.TrackedSection;
+import com.scarletsniper.repository.SectionRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
