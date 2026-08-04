@@ -1,98 +1,119 @@
-🎯 Rutgers Course Sniper
+# 🎯 Rutgers Course Sniper
 
-A robust, high-performance Java Spring Boot application designed to monitor course availability at Rutgers University. It tracks specific course sections and sends real-time notifications via Twilio when a closed section opens up.
+A Java Spring Boot service that monitors course availability at Rutgers University. It polls the Rutgers Schedule of Classes API for specific course sections and sends a real-time SMS via Twilio the moment a closed section opens up.
 
-🚀 Features
+---
 
-Automated Sniping: Periodically polls the Rutgers Schedule of Classes API to check section status.
+## 🚀 Features
 
-Database Persistence: Stores user tracking requests and course metadata in PostgreSQL.
+* **Automated sniping:** Periodically polls the Rutgers Schedule of Classes API to check section status.
+* **Database persistence:** Stores tracking requests and course metadata in PostgreSQL.
+* **SMS notifications:** Integrates with Twilio to send instant alerts when a course opens.
+* **Memory optimized:** Tuned to run in containerized environments (like Railway) under strict memory limits.
 
-SMS Notifications: Integrates with Twilio to send instant alerts when a course opens.
+---
 
-Memory Optimized: Tuned to run efficiently in containerized environments (like Railway) with strict memory limits.
+## 🛠️ Tech Stack
 
-🛠️ Tech Stack
+| Layer | Technology |
+| --- | --- |
+| Language | Java 21 |
+| Framework | Spring Boot 3 |
+| Database | PostgreSQL (Hibernate/JPA) |
+| Notifications | Twilio SDK |
+| Build | Maven |
+| Deployment | Docker / Railway |
 
-Language: Java 21
+---
 
-Framework: Spring Boot 3
+## ⚙️ Configuration
 
-Database: PostgreSQL (Hibernate/JPA)
+The application reads all credentials from the environment. Set these in your deployment platform, or use the `local` profile below to run without any of them.
 
-Notifications: Twilio SDK
+| Variable | Description |
+| --- | --- |
+| `DATABASE_URL` | JDBC URL for your PostgreSQL database |
+| `DATABASE_USERNAME` | Database username |
+| `DATABASE_PASSWORD` | Database password |
+| `TWILIO_ACCOUNT_SID` | Your Twilio Account SID |
+| `TWILIO_AUTH_TOKEN` | Your Twilio Auth Token |
+| `TWILIO_PHONE_NUMBER` | The Twilio number the SMS is sent from |
+| `PORT` | Server port (defaults to `8080`) |
 
-Build Tool: Maven
+> Never commit real credentials. `src/main/resources/application-local.properties` is gitignored for exactly this purpose.
 
-Deployment: Docker / Railway
+---
 
-⚙️ Configuration
+## 📦 Running Locally
 
-The application requires the following environment variables to run. You can set these in your local .env file or in your deployment platform settings.
+**1. Clone the repository**
 
-Variable
-
-Description
-
-SPRING_DATASOURCE_URL
-
-JDBC URL for your PostgreSQL database
-
-SPRING_DATASOURCE_USERNAME
-
-Database username
-
-SPRING_DATASOURCE_PASSWORD
-
-Database password
-
-TWILIO_ACCOUNT_SID
-
-Your Twilio Account SID
-
-TWILIO_AUTH_TOKEN
-
-Your Twilio Auth Token
-
-TWILIO_PHONE_NUMBER
-
-The Twilio number sending the SMS
-
-📦 Running Locally
-
-Clone the repository
-
-git clone [https://github.com/your-username/rutgers-course-sniper.git](https://github.com/your-username/rutgers-course-sniper.git)
+```bash
+git clone https://github.com/Aryaasd/rutgers-course-sniper.git
 cd rutgers-course-sniper
+```
 
+**2. Run it**
 
-Set up PostgreSQL
-Ensure you have a Postgres database running locally. Update your application.properties or set the environment variables listed above.
+The `local` profile starts the app against an in-memory H2 database, so you don't need Postgres or any cloud setup to try it:
 
-Build and Run
+```bash
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+```
 
-./mvnw spring-boot:run
+Create `src/main/resources/application-local.properties` with your own H2 and Twilio settings (the file is gitignored). Leave the Twilio values blank to run without SMS — `SmsService` falls back to logging alerts to the console.
 
+To run against a real PostgreSQL database instead, export the environment variables from the table above and run `./mvnw spring-boot:run`.
 
-☁️ Deployment (Railway)
+---
 
-This project is optimized for deployment on Railway.
+## 📡 Usage
 
-Connect GitHub: Link this repository to a new service in Railway.
+Sections are registered through the REST API at `/api`.
 
-Add Database: Add a PostgreSQL database service in Railway.
+**Start watching a section**
 
-Variables: Railway automatically provides DATABASE_URL, but you must manually add your Twilio credentials in the "Variables" tab.
+```bash
+curl -X POST http://localhost:8080/api/sections \
+  -H "Content-Type: application/json" \
+  -d '{"sectionIndex": "08278", "userContact": "+15555550123"}'
+```
 
-Memory Limits:
-To prevent Out-Of-Memory (OOM) crashes on smaller tiers, add the following variable:
+**List everything being watched**
 
-JAVA_TOOL_OPTIONS: -Xmx300m -Xms300m
+```bash
+curl http://localhost:8080/api/sections
+```
 
-⚠️ Disclaimer
+**Stop watching a section**
 
-This tool is for educational purposes. Please use responsibly and ensure you comply with the university's API usage policies to avoid rate limiting or IP bans.
+```bash
+curl -X DELETE http://localhost:8080/api/sections/1
+```
 
-📄 License
+Once a section is registered, the scheduler polls it automatically and texts `userContact` when it opens.
+
+---
+
+## ☁️ Deployment (Railway)
+
+1. **Connect GitHub:** Link this repository to a new Railway service.
+2. **Add a database:** Add a PostgreSQL service in Railway.
+3. **Set variables:** Railway provides the database connection automatically, but you must add your Twilio credentials in the **Variables** tab.
+4. **Cap the heap:** To prevent Out-Of-Memory crashes on smaller tiers, add:
+
+   ```
+   JAVA_TOOL_OPTIONS=-Xmx300m -Xms300m
+   ```
+
+---
+
+## ⚠️ Disclaimer
+
+This tool is for educational purposes. Please use it responsibly and comply with the university's API usage policies to avoid rate limiting or IP bans.
+
+---
+
+## 📄 License
 
 MIT
