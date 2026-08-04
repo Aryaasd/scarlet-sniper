@@ -2,7 +2,8 @@ package com.rutgers.sniper;
 
 import com.rutgers.sniper.model.TrackedSection;
 import com.rutgers.sniper.repository.SectionRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -14,85 +15,124 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.zip.GZIPInputStream;
 
 @Service
 public class SchedulerService {
 
+    private static final Logger log = LoggerFactory.getLogger(SchedulerService.class);
+
+    private static final String USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36";
+
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper mapper = new ObjectMapper();
 
-    @Autowired
-    private SectionRepository repository;
+    private final SectionRepository repository;
+    private final SmsService smsService;
 
-    @Autowired
-    private SmsService smsService; 
+    public SchedulerService(SectionRepository repository, SmsService smsService) {
+        this.repository = repository;
+        this.smsService = smsService;
+    }
 
+    // Every tracked section carries its own subject/term/year/campus, so
+    // this groups them by that combination and issues one Schedule-of-
+    // Classes request per distinct combination rather than one hardcoded
+    // request for everything.
     @Scheduled(fixedRate = 10000)
     public void checkRutgersCourses() {
-        String url = "https://sis.rutgers.edu/soc/api/courses.json?year=2025&term=9&campus=NB&subject=198";
+        List<TrackedSection> mySections = repository.findAll();
+        if (mySections.isEmpty()) return;
 
+        Map<CourseQuery, List<TrackedSection>> byQuery = mySections.stream()
+                .collect(Collectors.groupingBy(CourseQuery::from));
+
+        for (Map.Entry<CourseQuery, List<TrackedSection>> entry : byQuery.entrySet()) {
+            checkOneQuery(entry.getKey(), entry.getValue());
+        }
+    }
+
+    private void checkOneQuery(CourseQuery query, List<TrackedSection> tracked) {
         try {
-            List<TrackedSection> mySections = repository.findAll();
-            if (mySections.isEmpty()) return;
+            JsonNode allCourses = fetchCourses(query);
+            Map<String, Boolean> openBySectionIndex = indexOpenStatus(allCourses);
 
-            HttpHeaders headers = new HttpHeaders();
-            headers.add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36");
-            HttpEntity<String> entity = new HttpEntity<>(headers);
-            ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.GET, entity, byte[].class);
+            log.info("Checked {} courses for {} against {} tracked section(s)",
+                    allCourses.size(), query, tracked.size());
 
-            if (response.getBody() == null) return;
-
-            byte[] payload = response.getBody();
-            String jsonString;
-            if (payload.length > 2 && payload[0] == (byte) 0x1f && payload[1] == (byte) 0x8b) {
-                try (GZIPInputStream gis = new GZIPInputStream(new ByteArrayInputStream(payload))) {
-                    jsonString = new String(gis.readAllBytes(), StandardCharsets.UTF_8);
+            for (TrackedSection section : tracked) {
+                Boolean isCurrentlyOpen = openBySectionIndex.get(section.getSectionIndex());
+                if (isCurrentlyOpen == null) {
+                    log.warn("Section {} not found in {} response", section.getSectionIndex(), query);
+                    continue;
                 }
-            } else {
-                jsonString = new String(payload, StandardCharsets.UTF_8);
+                applyStatus(section, isCurrentlyOpen);
             }
-
-            JsonNode allCourses = mapper.readTree(jsonString);
-
-            System.out.println("Checking " + allCourses.size() + " courses against my " + mySections.size() + " targets...");
-
-            for (JsonNode course : allCourses) {
-                JsonNode sections = course.get("sections");
-                if (sections != null) {
-                    for (JsonNode section : sections) {
-                        String sectionIndex = section.get("index").asText();
-                        boolean isCurrentlyOpen = section.get("openStatus").asBoolean();
-
-                        for (TrackedSection tracked : mySections) {
-                            if (tracked.getSectionIndex().equals(sectionIndex)) {
-                                
-                                if (isCurrentlyOpen && !tracked.isOpen()) {
-                                    
-                                    System.out.println("🚨 SNIPER ALERT: " + sectionIndex + " IS OPEN!");
-                                    
-                                    smsService.sendSms(tracked.getUserContact(), "RUTGERS SNIPER: Class " + sectionIndex + " is OPEN! Go register!");
-
-                                    tracked.setOpen(true);
-                                    repository.save(tracked);
-
-                                } else if (!isCurrentlyOpen && tracked.isOpen()) {
-                                    System.out.println("... Section " + sectionIndex + " has closed again.");
-                                    tracked.setOpen(false);
-                                    repository.save(tracked);
-                                } else {
-                                    System.out.println("... Section " + sectionIndex + " status: " + (isCurrentlyOpen ? "OPEN (Already notified)" : "CLOSED"));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
         } catch (Exception e) {
-            System.out.println("Error: " + e.getMessage());
+            log.error("Failed to check courses for {}: {}", query, e.getMessage(), e);
+        }
+    }
+
+    private Map<String, Boolean> indexOpenStatus(JsonNode allCourses) {
+        Map<String, Boolean> result = new HashMap<>();
+        for (JsonNode course : allCourses) {
+            JsonNode sections = course.get("sections");
+            if (sections == null) continue;
+            for (JsonNode section : sections) {
+                result.put(section.get("index").asText(), section.get("openStatus").asBoolean());
+            }
+        }
+        return result;
+    }
+
+    // Package-private so it's directly unit-testable without mocking HTTP/JSON.
+    void applyStatus(TrackedSection tracked, boolean isCurrentlyOpen) {
+        if (isCurrentlyOpen && !tracked.isOpen()) {
+            log.info("SNIPER ALERT: {} is OPEN!", tracked.getSectionIndex());
+            smsService.sendSms(tracked.getUserContact(),
+                    "RUTGERS SNIPER: Class " + tracked.getSectionIndex() + " is OPEN! Go register!");
+            tracked.setOpen(true);
+            repository.save(tracked);
+        } else if (!isCurrentlyOpen && tracked.isOpen()) {
+            log.info("Section {} has closed again.", tracked.getSectionIndex());
+            tracked.setOpen(false);
+            repository.save(tracked);
+        }
+    }
+
+    private JsonNode fetchCourses(CourseQuery query) throws IOException {
+        String url = "https://sis.rutgers.edu/soc/api/courses.json?year=%d&term=%s&campus=%s&subject=%s"
+                .formatted(query.year(), query.term(), query.campus(), query.subject());
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.add("User-Agent", USER_AGENT);
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+        ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.GET, entity, byte[].class);
+
+        byte[] payload = response.getBody();
+        if (payload == null) return mapper.createArrayNode();
+
+        String jsonString;
+        if (payload.length > 2 && payload[0] == (byte) 0x1f && payload[1] == (byte) 0x8b) {
+            try (GZIPInputStream gis = new GZIPInputStream(new ByteArrayInputStream(payload))) {
+                jsonString = new String(gis.readAllBytes(), StandardCharsets.UTF_8);
+            }
+        } else {
+            jsonString = new String(payload, StandardCharsets.UTF_8);
+        }
+        return mapper.readTree(jsonString);
+    }
+
+    private record CourseQuery(int year, String term, String campus, String subject) {
+        static CourseQuery from(TrackedSection s) {
+            return new CourseQuery(s.getYear(), s.getTerm(), s.getCampus(), s.getSubject());
         }
     }
 }

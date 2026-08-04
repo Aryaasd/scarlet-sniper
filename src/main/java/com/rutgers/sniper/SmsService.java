@@ -4,11 +4,15 @@ import com.twilio.Twilio;
 import com.twilio.rest.api.v2010.account.Message;
 import com.twilio.type.PhoneNumber;
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
 public class SmsService {
+
+    private static final Logger log = LoggerFactory.getLogger(SmsService.class);
 
     @Value("${twilio.account.sid}")
     private String accountSid;
@@ -24,7 +28,7 @@ public class SmsService {
         try {
             Twilio.init(accountSid, authToken);
         } catch (Exception e) {
-            System.out.println("⚠️ Twilio failed to init (Local Mode). SMS will be logged to console instead.");
+            log.warn("Twilio failed to init (local mode). SMS will be logged to console instead.");
         }
     }
 
@@ -35,10 +39,9 @@ public class SmsService {
                 new PhoneNumber(fromPhone),
                 messageBody
             ).create();
-            System.out.println("✅ SMS SENT to " + toPhone);
+            log.info("SMS sent to {}", toPhone);
         } catch (Exception e) {
-            System.err.println("❌ FAILED TO SEND SMS: " + e.getMessage());
+            log.error("Failed to send SMS to {}: {}", toPhone, e.getMessage());
         }
     }
-
 }
