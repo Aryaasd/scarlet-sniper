@@ -21,7 +21,11 @@ public class SmsService {
 
     @PostConstruct
     public void init() {
-        Twilio.init(accountSid, authToken);
+        try {
+            Twilio.init(accountSid, authToken);
+        } catch (Exception e) {
+            System.out.println("⚠️ Twilio failed to init (Local Mode). SMS will be logged to console instead.");
+        }
     }
 
     public void sendSms(String toPhone, String messageBody) {
@@ -36,4 +40,5 @@ public class SmsService {
             System.err.println("❌ FAILED TO SEND SMS: " + e.getMessage());
         }
     }
+
 }
