@@ -14,6 +14,7 @@ A Java Spring Boot service that watches Rutgers Schedule-of-Classes sections and
 * **Database persistence:** Stores tracking requests in PostgreSQL, schema-managed by Flyway.
 * **SMS notifications:** Integrates with Twilio to send instant alerts when a section opens.
 * **Owner-scoped API:** Each watch is protected by a token issued at creation time — nobody else can see it or delete it, and listing without a token returns nothing.
+* **Phone verification:** A number is never texted until it confirms a code sent via Twilio Verify — registering a watch doesn't mean a stranger's phone starts getting messages.
 * **Abuse throttling:** New watches are rate-limited per IP.
 * **Memory optimized:** Tuned to run in containerized environments (like Railway) under strict memory limits.
 
@@ -45,6 +46,7 @@ The application reads all credentials from the environment. Set these in your de
 | `TWILIO_ACCOUNT_SID` | Your Twilio Account SID |
 | `TWILIO_AUTH_TOKEN` | Your Twilio Auth Token |
 | `TWILIO_PHONE_NUMBER` | The Twilio number the SMS is sent from |
+| `TWILIO_VERIFY_SERVICE_SID` | Your Twilio Verify Service SID. Unset in dev: new watches auto-confirm instead of requiring a code, so local testing doesn't need a live Verify Service. |
 | `PORT` | Server port (defaults to `8080`) |
 
 > Never commit real credentials. `src/main/resources/application-local.properties` is gitignored for exactly this purpose.
@@ -94,12 +96,33 @@ curl -X POST http://localhost:8080/api/sections \
 
 ```json
 {
-  "section": { "id": 1, "sectionIndex": "03608", "subject": "198", "term": "9", "year": 2025, "campus": "NB", "userContact": "+15555550123", "open": false },
-  "ownerToken": "6a9b3e6c-1c09-4ab0-9b31-57ac2d55d334"
+  "section": { "id": 1, "sectionIndex": "03608", "subject": "198", "term": "9", "year": 2025, "campus": "NB", "confirmed": false, "userContact": "+15555550123", "open": false },
+  "ownerToken": "6a9b3e6c-1c09-4ab0-9b31-57ac2d55d334",
+  "codeSent": true
 }
 ```
 
 `subject`, `term`, `year`, and `campus` are optional and default to Fall 2025 Computer Science at New Brunswick (`198` / `9` / `2025` / `NB`) — pass your own to track a section in any other department or term. Creation is rate-limited to 5 new watches per IP per 10 minutes.
+
+**Confirm the phone number**
+
+If `TWILIO_VERIFY_SERVICE_SID` is set, the section comes back `confirmed: false` and a code is texted to `userContact`. Nothing gets alerted until it's confirmed:
+
+```bash
+curl -X POST http://localhost:8080/api/sections/1/verify \
+  -H "Content-Type: application/json" \
+  -H "X-Owner-Token: 6a9b3e6c-1c09-4ab0-9b31-57ac2d55d334" \
+  -d '{"code": "123456"}'
+```
+
+`204` on success, `422` on a wrong or expired code, `403` on a bad owner token. If the code expired, resend it:
+
+```bash
+curl -X POST http://localhost:8080/api/sections/1/resend-code \
+  -H "X-Owner-Token: 6a9b3e6c-1c09-4ab0-9b31-57ac2d55d334"
+```
+
+Without `TWILIO_VERIFY_SERVICE_SID` configured (the local-dev default), sections come back `confirmed: true` immediately and there's nothing to verify.
 
 **List your own watched sections**
 
@@ -119,7 +142,7 @@ curl -X DELETE http://localhost:8080/api/sections/1 \
   -H "X-Owner-Token: 6a9b3e6c-1c09-4ab0-9b31-57ac2d55d334"
 ```
 
-Once a section is registered, the scheduler polls its subject/term/year/campus combination automatically and texts `userContact` when it opens.
+Once a section is confirmed, the scheduler polls its subject/term/year/campus combination automatically and texts `userContact` when it opens. Unconfirmed sections are still polled — the moment you confirm, the next poll catches an already-open section instead of waiting for it to close and reopen.
 
 ---
 
@@ -127,7 +150,7 @@ Once a section is registered, the scheduler polls its subject/term/year/campus c
 
 1. **Connect GitHub:** Link this repository to a new Railway service.
 2. **Add a database:** Add a PostgreSQL service in Railway. Flyway applies the schema automatically on first boot.
-3. **Set variables:** Railway provides the database connection automatically, but you must add your Twilio credentials in the **Variables** tab.
+3. **Set variables:** Railway provides the database connection automatically, but you must add your Twilio credentials in the **Variables** tab, including `TWILIO_VERIFY_SERVICE_SID` — without it, phone verification is skipped entirely and every new watch is texted with no confirmation step.
 4. **Cap the heap:** To prevent Out-Of-Memory crashes on smaller tiers, add:
 
    ```
