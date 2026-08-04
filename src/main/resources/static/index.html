@@ -1,144 +1,513 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rutgers Sniper 🎯</title>
-    <style>
-        body { font-family: -apple-system, system-ui, sans-serif; background: #1a1a1a; color: #fff; display: flex; justify-content: center; padding-top: 50px; }
-        .container { width: 400px; background: #2d2d2d; padding: 20px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        h1 { text-align: center; color: #cc0033; margin-bottom: 20px; } /* Rutgers Red */
-        
-        /* Input Group Styling */
-        .input-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-size: 12px; color: #aaa; }
-        input { width: 93%; padding: 12px; border-radius: 6px; border: 1px solid #404040; background: #404040; color: white; font-size: 16px; outline: none; transition: 0.2s; }
-        input:focus { border-color: #cc0033; background: #4a4a4a; }
-        
-        button { width: 100%; padding: 12px; background: #cc0033; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 16px; transition: 0.2s; margin-top: 10px; }
-        button:hover { background: #e60039; }
-        
-        ul { list-style: none; padding: 0; margin-top: 20px; }
-        li { background: #404040; margin-bottom: 10px; padding: 15px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
-        
-        .status { font-size: 12px; padding: 4px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .closed { background: #555; color: #aaa; }
-        .open { background: #2ecc71; color: #fff; font-weight: bold; animation: pulse 2s infinite; }
-        
-        .del-btn { background: transparent; color: #ff4444; width: auto; padding: 5px 10px; font-size: 20px; line-height: 1; margin-top: 0; cursor: pointer; }
-        .del-btn:hover { background: rgba(255, 68, 68, 0.1); border-radius: 4px; }
-        
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rutgers Sniper</title>
+<style>
+  :root {
+    --bg: #14151a;
+    --surface: #1c1e24;
+    --surface-raised: #23252c;
+    --border: #2e3038;
+    --border-focus: #cc0033;
+    --text: #f2f2f3;
+    --text-dim: #9a9ba3;
+    --text-faint: #5c5e68;
+    --accent: #d6003f;
+    --accent-hover: #f10047;
+    --accent-soft: rgba(214, 0, 63, 0.12);
+    --success: #2ecc71;
+    --success-soft: rgba(46, 204, 113, 0.14);
+    --danger: #ff5c5c;
+    --radius-lg: 16px;
+    --radius-md: 10px;
+    --radius-sm: 7px;
+    --shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.55);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 15% 0%, rgba(214, 0, 63, 0.10), transparent 40%),
+      var(--bg);
+    color: var(--text);
+    display: flex;
+    justify-content: center;
+    padding: 56px 20px;
+  }
+
+  .app { width: 100%; max-width: 460px; }
+
+  header { margin-bottom: 24px; text-align: center; }
+
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .logo-mark {
+    width: 34px; height: 34px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent), #7a0026);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 6px 16px -4px rgba(214, 0, 63, 0.6);
+    font-size: 17px;
+  }
+
+  .tagline {
+    margin: 8px 0 0;
+    color: var(--text-dim);
+    font-size: 13.5px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    box-shadow: var(--shadow);
+  }
+
+  .field { margin-bottom: 14px; }
+
+  .field label {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+
+  input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--surface-raised);
+    color: var(--text);
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  input::placeholder { color: var(--text-faint); }
+  input:focus { border-color: var(--border-focus); background: #26282f; }
+
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .advanced-toggle {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .advanced-toggle:hover { color: var(--text); }
+  .advanced-toggle .chev { transition: transform 0.15s; font-size: 10px; }
+  .advanced-toggle.open .chev { transform: rotate(90deg); }
+
+  .advanced-panel {
+    display: none;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding: 14px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+  .advanced-panel.open { display: grid; }
+  .advanced-panel .field { margin-bottom: 0; }
+
+  button.primary {
+    width: 100%;
+    padding: 13px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-weight: 700;
+    font-size: 15px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    margin-top: 4px;
+  }
+  button.primary:hover { background: var(--accent-hover); }
+  button.primary:active { transform: scale(0.99); }
+  button.primary:disabled { opacity: 0.55; cursor: not-allowed; }
+
+  .banner {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    margin-bottom: 14px;
+  }
+  .banner.show { display: flex; }
+  .banner.error { background: rgba(255, 92, 92, 0.12); color: var(--danger); border: 1px solid rgba(255, 92, 92, 0.25); }
+  .banner.info { background: var(--accent-soft); color: #ff8fae; border: 1px solid rgba(214, 0, 63, 0.25); }
+
+  .section-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin: 26px 0 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-heading h2 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin: 0;
+    font-weight: 700;
+  }
+  .section-heading .count {
+    font-size: 11.5px;
+    color: var(--text-faint);
+  }
+
+  #targetList { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+
+  .empty-state {
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 13.5px;
+    padding: 28px 10px;
+    font-style: italic;
+  }
+
+  li.target {
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 13px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    animation: rise 0.2s ease-out;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+  .target-index { font-size: 16px; font-weight: 700; color: var(--text); }
+  .target-meta { font-size: 11.5px; color: var(--text-faint); margin-top: 2px; }
+  .target-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+  .status-pill {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 5px 9px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+  .status-pill.closed { background: #34363f; color: var(--text-dim); }
+  .status-pill.open { background: var(--success-soft); color: var(--success); animation: pulse 1.8s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+  .del-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 30px; height: 30px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .del-btn:hover { border-color: var(--danger); color: var(--danger); }
+  .del-btn.confirming {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: white;
+    width: auto;
+    padding: 0 10px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  footer {
+    margin-top: 22px;
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--text-faint);
+    line-height: 1.6;
+  }
+</style>
 </head>
 <body>
 
-<div class="container">
-    <h1>🎯 Rutgers Sniper</h1>
-    
-    <div class="input-group">
-        <label>Course Index Number</label>
-        <input type="text" id="index" placeholder="e.g. 03608" maxlength="5">
+<div class="app">
+  <header>
+    <div class="logo"><span class="logo-mark">🎯</span> Rutgers Sniper</div>
+    <p class="tagline">Get texted the second a closed section opens up.</p>
+  </header>
+
+  <div class="card">
+    <div id="banner" class="banner"></div>
+
+    <div class="field">
+      <label for="index">Course Index Number</label>
+      <input type="text" id="index" placeholder="e.g. 03608" maxlength="5" inputmode="numeric">
     </div>
 
-    <div class="input-group">
-        <label>Your Phone Number</label>
-        <input type="tel" id="phone" placeholder="e.g. 9085551234">
+    <div class="field">
+      <label for="phone">Your Phone Number</label>
+      <input type="tel" id="phone" placeholder="e.g. 9085551234" inputmode="tel">
     </div>
 
-    <button onclick="addSection()">Start Watching</button>
+    <button type="button" class="advanced-toggle" id="advancedToggle">
+      <span class="chev">▶</span> Track a different subject or term
+    </button>
+    <div class="advanced-panel" id="advancedPanel">
+      <div class="field">
+        <label for="subject">Subject Code</label>
+        <input type="text" id="subject" placeholder="198 (default)" maxlength="10">
+      </div>
+      <div class="field">
+        <label for="term">Term Code</label>
+        <input type="text" id="term" placeholder="9 = Fall (default)" maxlength="5">
+      </div>
+      <div class="field">
+        <label for="year">Year</label>
+        <input type="number" id="year" placeholder="2025 (default)">
+      </div>
+      <div class="field">
+        <label for="campus">Campus</label>
+        <input type="text" id="campus" placeholder="NB (default)" maxlength="10">
+      </div>
+    </div>
 
-    <h3 style="margin-top: 30px; border-bottom: 1px solid #444; padding-bottom: 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #888;">Active Targets</h3>
+    <button type="button" class="primary" id="addBtn" onclick="addSection()">Start Watching</button>
+
+    <div class="section-heading">
+      <h2>Active Targets</h2>
+      <span class="count" id="targetCount"></span>
+    </div>
     <ul id="targetList"></ul>
+  </div>
+
+  <footer>
+    Watches are private to this browser — no login, just a token stored locally.<br>
+    Clearing your browser storage means you lose access to manage existing watches.
+  </footer>
 </div>
 
 <script>
-    const API_URL = '/api/sections';
+  const API_URL = '/api/sections';
+  const STORAGE_KEY = 'sniper.watches'; // [{id, ownerToken}]
 
-    // Allow pressing "Enter" to submit
-    document.addEventListener('keydown', function(event) {
-        if (event.key === 'Enter') addSection();
+  function getWatches() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+    catch { return []; }
+  }
+  function saveWatches(watches) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(watches));
+  }
+  function tokenForId(id) {
+    const w = getWatches().find(w => w.id === id);
+    return w ? w.ownerToken : null;
+  }
+
+  function showBanner(message, kind = 'error') {
+    const el = document.getElementById('banner');
+    el.textContent = message;
+    el.className = `banner show ${kind}`;
+  }
+  function hideBanner() {
+    document.getElementById('banner').className = 'banner';
+  }
+
+  document.getElementById('advancedToggle').addEventListener('click', () => {
+    document.getElementById('advancedToggle').classList.toggle('open');
+    document.getElementById('advancedPanel').classList.toggle('open');
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && document.activeElement.tagName === 'INPUT') addSection();
+  });
+
+  async function loadSections() {
+    const watches = getWatches();
+    const list = document.getElementById('targetList');
+    const countEl = document.getElementById('targetCount');
+
+    if (watches.length === 0) {
+      list.innerHTML = '<div class="empty-state">No active snipes. Add one above!</div>';
+      countEl.textContent = '';
+      return;
+    }
+
+    try {
+      const tokens = watches.map(w => w.ownerToken).join(',');
+      const res = await fetch(API_URL, { headers: { 'X-Owner-Tokens': tokens } });
+      const sections = await res.json();
+
+      // Prune any local watch the server no longer knows about.
+      const liveIds = new Set(sections.map(s => s.id));
+      saveWatches(watches.filter(w => liveIds.has(w.id)));
+
+      if (sections.length === 0) {
+        list.innerHTML = '<div class="empty-state">No active snipes. Add one above!</div>';
+        countEl.textContent = '';
+        return;
+      }
+
+      countEl.textContent = `${sections.length} watched`;
+      list.innerHTML = '';
+      sections.forEach(s => list.appendChild(renderTarget(s)));
+    } catch (e) {
+      showBanner('Could not reach the server. Is it running?');
+      console.error(e);
+    }
+  }
+
+  function renderTarget(s) {
+    const li = document.createElement('li');
+    li.className = 'target';
+
+    const prettyPhone = s.userContact.replace(/(\+1)(\d{3})(\d{3})(\d{4})/, '($2) $3-$4');
+    const query = [s.subject, s.term, s.year, s.campus].filter(Boolean).join(' · ');
+
+    li.innerHTML = `
+      <div>
+        <div class="target-index">#${s.sectionIndex}</div>
+        <div class="target-meta">${prettyPhone} &nbsp;·&nbsp; ${query}</div>
+      </div>
+      <div class="target-actions">
+        <span class="status-pill ${s.open ? 'open' : 'closed'}">${s.open ? 'Open!' : 'Closed'}</span>
+        <button class="del-btn" title="Stop watching">✕</button>
+      </div>
+    `;
+
+    const delBtn = li.querySelector('.del-btn');
+    let confirmTimer = null;
+    delBtn.addEventListener('click', () => {
+      if (!delBtn.classList.contains('confirming')) {
+        delBtn.classList.add('confirming');
+        delBtn.textContent = 'Confirm';
+        confirmTimer = setTimeout(() => {
+          delBtn.classList.remove('confirming');
+          delBtn.textContent = '✕';
+        }, 3000);
+        return;
+      }
+      clearTimeout(confirmTimer);
+      deleteSection(s.id);
     });
 
-    // 1. Load data
-    async function loadSections() {
-        try {
-            const res = await fetch(API_URL);
-            const sections = await res.json();
-            const list = document.getElementById('targetList');
-            list.innerHTML = ''; 
+    return li;
+  }
 
-            if(sections.length === 0) {
-                list.innerHTML = '<div style="text-align:center; color:#666; padding:20px; font-style:italic;">No active snipes. Add one above!</div>';
-                return;
-            }
+  async function addSection() {
+    hideBanner();
+    const indexInput = document.getElementById('index');
+    const phoneInput = document.getElementById('phone');
+    const addBtn = document.getElementById('addBtn');
 
-            sections.forEach(s => {
-                const li = document.createElement('li');
-                const statusClass = s.open ? 'open' : 'closed';
-                const statusText = s.open ? 'OPEN!' : 'CLOSED';
-                
-                // Make the phone number look pretty in the list
-                const prettyPhone = s.userContact.replace(/(\+1)(\d{3})(\d{3})(\d{4})/, '($2) $3-$4');
+    const index = indexInput.value.trim();
+    const cleanPhone = phoneInput.value.replace(/\D/g, '');
 
-                li.innerHTML = `
-                    <div>
-                        <strong style="font-size: 18px; color: #fff;">#${s.sectionIndex}</strong><br>
-                        <span style="font-size: 12px; color: #888;">${prettyPhone}</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span class="status ${statusClass}">${statusText}</span>
-                        <button class="del-btn" onclick="deleteSection(${s.id})" title="Stop Watching">×</button>
-                    </div>
-                `;
-                list.appendChild(li);
-            });
-        } catch (e) {
-            console.error("Error loading sections:", e);
-        }
+    if (!index || index.length < 5) return showBanner('Please enter a valid 5-digit Course Index.');
+    if (cleanPhone.length !== 10) return showBanner('Please enter a valid 10-digit phone number (e.g. 9085551234).');
+
+    const subject = document.getElementById('subject').value.trim();
+    const term = document.getElementById('term').value.trim();
+    const yearRaw = document.getElementById('year').value.trim();
+    const campus = document.getElementById('campus').value.trim();
+
+    const body = {
+      sectionIndex: index,
+      userContact: '+1' + cleanPhone,
+      subject: subject || null,
+      term: term || null,
+      year: yearRaw ? parseInt(yearRaw, 10) : null,
+      campus: campus || null,
+    };
+
+    addBtn.disabled = true;
+    addBtn.textContent = 'Adding…';
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (res.status === 429) {
+        showBanner("You're adding watches too quickly. Try again in a few minutes.");
+        return;
+      }
+      if (!res.ok) {
+        showBanner('Could not add that section. Double-check the details.');
+        return;
+      }
+
+      const created = await res.json();
+      const watches = getWatches();
+      watches.push({ id: created.section.id, ownerToken: created.ownerToken });
+      saveWatches(watches);
+
+      indexInput.value = '';
+      phoneInput.value = '';
+      await loadSections();
+    } catch (e) {
+      showBanner('Could not reach the server. Is it running?');
+      console.error(e);
+    } finally {
+      addBtn.disabled = false;
+      addBtn.textContent = 'Start Watching';
+    }
+  }
+
+  async function deleteSection(id) {
+    const token = tokenForId(id);
+    if (!token) return;
+
+    try {
+      const res = await fetch(`${API_URL}/${id}`, {
+        method: 'DELETE',
+        headers: { 'X-Owner-Token': token },
+      });
+      if (!res.ok && res.status !== 404) {
+        showBanner('Could not remove that watch. Try again.');
+        return;
+      }
+    } catch (e) {
+      showBanner('Could not reach the server. Is it running?');
+      console.error(e);
+      return;
     }
 
-    // 2. Add section with SMART formatting
-    async function addSection() {
-        const indexInput = document.getElementById('index');
-        const phoneInput = document.getElementById('phone');
-        
-        const index = indexInput.value.trim();
-        let rawPhone = phoneInput.value;
+    saveWatches(getWatches().filter(w => w.id !== id));
+    await loadSections();
+  }
 
-        // Strip out anything that isn't a number (spaces, dashes, parens)
-        // e.g., "(908) 555-1234" becomes "9085551234"
-        const cleanPhone = rawPhone.replace(/\D/g, '');
-
-        if(!index || index.length < 5) return alert("Please enter a valid 5-digit Course Index.");
-        
-        // Validation: US numbers must be 10 digits
-        if (cleanPhone.length !== 10) {
-            return alert("Please enter a valid 10-digit phone number (e.g. 9085551234).");
-        }
-
-        // Auto-add the +1 for Twilio
-        const formattedPhone = '+1' + cleanPhone;
-
-        await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sectionIndex: index, userContact: formattedPhone })
-        });
-
-        // Clear inputs and reload
-        indexInput.value = '';
-        phoneInput.value = '';
-        loadSections();
-    }
-
-    async function deleteSection(id) {
-        if(!confirm("Stop watching this section?")) return;
-        await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
-        loadSections();
-    }
-
-    loadSections();
+  loadSections();
 </script>
 
 </body>
