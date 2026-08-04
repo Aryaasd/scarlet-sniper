@@ -23,6 +23,10 @@ public class TrackedSection {
 
     private boolean isOpen;
 
+    // Only sections with a verified userContact are ever texted — see
+    // SchedulerService.applyStatus and PhoneVerificationService.
+    private boolean confirmed;
+
     private String userContact;
 
     // Proof of ownership for this watch. Handed to the client once, on

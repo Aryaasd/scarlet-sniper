@@ -1,0 +1,2 @@
+ALTER TABLE tracked_section
+    ADD COLUMN confirmed BOOLEAN NOT NULL DEFAULT FALSE;

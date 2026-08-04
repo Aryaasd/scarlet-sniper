@@ -95,6 +95,14 @@ public class SchedulerService {
     // Package-private so it's directly unit-testable without mocking HTTP/JSON.
     void applyStatus(TrackedSection tracked, boolean isCurrentlyOpen) {
         if (isCurrentlyOpen && !tracked.isOpen()) {
+            if (!tracked.isConfirmed()) {
+                // Don't mark it open or save anything — leave isOpen false so
+                // this same branch fires again on the next poll. The moment
+                // the owner confirms, the very next cycle catches it and
+                // alerts normally. We just never text an unverified number.
+                log.info("Section {} opened but contact is unverified — not alerting.", tracked.getSectionIndex());
+                return;
+            }
             log.info("SNIPER ALERT: {} is OPEN!", tracked.getSectionIndex());
             smsService.sendSms(tracked.getUserContact(),
                     "RUTGERS SNIPER: Class " + tracked.getSectionIndex() + " is OPEN! Go register!");

@@ -1,8 +1,10 @@
 package com.rutgers.sniper.controller;
 
+import com.rutgers.sniper.PhoneVerificationService;
 import com.rutgers.sniper.RutgersDefaults;
 import com.rutgers.sniper.dto.SectionCreateRequest;
 import com.rutgers.sniper.dto.SectionCreatedResponse;
+import com.rutgers.sniper.dto.VerifyCodeRequest;
 import com.rutgers.sniper.model.TrackedSection;
 import com.rutgers.sniper.repository.SectionRepository;
 import jakarta.servlet.http.HttpServletRequest;
@@ -32,14 +34,16 @@ public class SniperController {
     private static final Duration RATE_LIMIT_WINDOW = Duration.ofMinutes(10);
 
     private final SectionRepository repository;
+    private final PhoneVerificationService verificationService;
 
     // Simple in-memory per-IP throttle on section creation. Good enough for
     // a single-instance deployment; wouldn't survive a horizontally-scaled
     // one, but this app doesn't run as more than one instance.
     private final Map<String, Deque<Instant>> creationTimestampsByIp = new ConcurrentHashMap<>();
 
-    public SniperController(SectionRepository repository) {
+    public SniperController(SectionRepository repository, PhoneVerificationService verificationService) {
         this.repository = repository;
+        this.verificationService = verificationService;
     }
 
     // Only returns sections owned by one of the caller's own tokens.
@@ -56,6 +60,10 @@ public class SniperController {
                 .toList();
     }
 
+    // Creates the watch unconfirmed and fires off a verification code.
+    // SchedulerService will never text userContact until it's confirmed
+    // via /sections/{id}/verify — this is what stops someone registering
+    // a stranger's number.
     @PostMapping("/sections")
     public ResponseEntity<SectionCreatedResponse> addSection(
             @RequestBody SectionCreateRequest request, HttpServletRequest httpRequest) {
@@ -75,13 +83,79 @@ public class SniperController {
         section.setCampus(defaultIfBlank(request.campus(), RutgersDefaults.CAMPUS));
         section.setYear(request.year() != null ? request.year() : RutgersDefaults.YEAR);
         section.setOpen(false);
+        section.setConfirmed(!verificationService.isEnabled());
         section.setOwnerToken(UUID.randomUUID().toString());
 
         TrackedSection saved = repository.save(section);
         log.info("New watch registered: section {} ({} {} {} {})", saved.getSectionIndex(),
                 saved.getSubject(), saved.getTerm(), saved.getYear(), saved.getCampus());
 
-        return ResponseEntity.ok(new SectionCreatedResponse(saved, saved.getOwnerToken()));
+        boolean codeSent = false;
+        if (!saved.isConfirmed()) {
+            try {
+                verificationService.sendCode(saved.getUserContact());
+                codeSent = true;
+            } catch (PhoneVerificationService.VerificationSendException e) {
+                // Section still exists, unconfirmed; caller can retry via /resend-code.
+            }
+        }
+
+        return ResponseEntity.ok(new SectionCreatedResponse(saved, saved.getOwnerToken(), codeSent));
+    }
+
+    // Confirms a watch's phone number. Required before it will ever be
+    // texted. Idempotent once confirmed.
+    @PostMapping("/sections/{id}/verify")
+    public ResponseEntity<Void> verifySection(
+            @PathVariable Long id,
+            @RequestBody VerifyCodeRequest request,
+            @RequestHeader(value = "X-Owner-Token", required = false) String ownerToken) {
+
+        return repository.findById(id)
+                .map(section -> {
+                    if (ownerToken == null || !ownerToken.equals(section.getOwnerToken())) {
+                        return ResponseEntity.status(HttpStatus.FORBIDDEN).<Void>build();
+                    }
+                    if (section.isConfirmed()) {
+                        return ResponseEntity.noContent().<Void>build();
+                    }
+                    if (isBlank(request.code())) {
+                        return ResponseEntity.badRequest().<Void>build();
+                    }
+                    boolean valid = verificationService.checkCode(section.getUserContact(), request.code().trim());
+                    if (!valid) {
+                        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).<Void>build();
+                    }
+                    section.setConfirmed(true);
+                    repository.save(section);
+                    log.info("Section {} verified", section.getSectionIndex());
+                    return ResponseEntity.noContent().<Void>build();
+                })
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    // Re-sends a verification code, e.g. after the original expired.
+    @PostMapping("/sections/{id}/resend-code")
+    public ResponseEntity<Void> resendCode(
+            @PathVariable Long id,
+            @RequestHeader(value = "X-Owner-Token", required = false) String ownerToken) {
+
+        return repository.findById(id)
+                .map(section -> {
+                    if (ownerToken == null || !ownerToken.equals(section.getOwnerToken())) {
+                        return ResponseEntity.status(HttpStatus.FORBIDDEN).<Void>build();
+                    }
+                    if (section.isConfirmed()) {
+                        return ResponseEntity.status(HttpStatus.CONFLICT).<Void>build();
+                    }
+                    try {
+                        verificationService.sendCode(section.getUserContact());
+                    } catch (PhoneVerificationService.VerificationSendException e) {
+                        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).<Void>build();
+                    }
+                    return ResponseEntity.noContent().<Void>build();
+                })
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     // Requires the token handed out at creation. Wrong or missing token ->
