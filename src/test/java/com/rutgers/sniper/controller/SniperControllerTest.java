@@ -1,7 +1,9 @@
 package com.rutgers.sniper.controller;
 
+import com.rutgers.sniper.PhoneVerificationService;
 import com.rutgers.sniper.dto.SectionCreateRequest;
 import com.rutgers.sniper.dto.SectionCreatedResponse;
+import com.rutgers.sniper.dto.VerifyCodeRequest;
 import com.rutgers.sniper.model.TrackedSection;
 import com.rutgers.sniper.repository.SectionRepository;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,13 +24,17 @@ import static org.mockito.Mockito.*;
 class SniperControllerTest {
 
     private SectionRepository repository;
+    private PhoneVerificationService verificationService;
     private SniperController controller;
     private HttpServletRequest request;
 
     @BeforeEach
     void setUp() {
         repository = mock(SectionRepository.class);
-        controller = new SniperController(repository);
+        verificationService = mock(PhoneVerificationService.class);
+        // Matches the local-dev/test default: no Verify Service configured.
+        when(verificationService.isEnabled()).thenReturn(false);
+        controller = new SniperController(repository, verificationService);
         request = mock(HttpServletRequest.class);
         when(request.getRemoteAddr()).thenReturn("203.0.113.1");
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -79,6 +85,180 @@ class SniperControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         verify(repository, never()).save(any());
+    }
+
+    @Test
+    void addSectionAutoConfirmsWhenVerificationDisabled() {
+        SectionCreateRequest req = new SectionCreateRequest("03608", null, null, null, null, "+12015550123");
+
+        ResponseEntity<SectionCreatedResponse> response = controller.addSection(req, request);
+
+        assertThat(response.getBody().section().isConfirmed()).isTrue();
+        assertThat(response.getBody().codeSent()).isFalse();
+        verify(verificationService, never()).sendCode(any());
+    }
+
+    @Test
+    void addSectionSendsCodeAndLeavesUnconfirmedWhenVerificationEnabled() {
+        when(verificationService.isEnabled()).thenReturn(true);
+        SectionCreateRequest req = new SectionCreateRequest("03608", null, null, null, null, "+12015550123");
+
+        ResponseEntity<SectionCreatedResponse> response = controller.addSection(req, request);
+
+        assertThat(response.getBody().section().isConfirmed()).isFalse();
+        assertThat(response.getBody().codeSent()).isTrue();
+        verify(verificationService).sendCode("+12015550123");
+    }
+
+    @Test
+    void addSectionStillCreatesSectionWhenSendCodeFails() {
+        when(verificationService.isEnabled()).thenReturn(true);
+        doThrow(new PhoneVerificationService.VerificationSendException("boom", new RuntimeException()))
+                .when(verificationService).sendCode(any());
+        SectionCreateRequest req = new SectionCreateRequest("03608", null, null, null, null, "+12015550123");
+
+        ResponseEntity<SectionCreatedResponse> response = controller.addSection(req, request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().section().isConfirmed()).isFalse();
+        assertThat(response.getBody().codeSent()).isFalse();
+        verify(repository).save(any());
+    }
+
+    @Test
+    void verifyRejectsWrongOwnerToken() {
+        TrackedSection existing = new TrackedSection();
+        existing.setId(1L);
+        existing.setOwnerToken("abc");
+        existing.setUserContact("+12015550123");
+        when(repository.findById(1L)).thenReturn(Optional.of(existing));
+
+        ResponseEntity<Void> response = controller.verifySection(1L, new VerifyCodeRequest("123456"), "wrong-token");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        verifyNoInteractions(verificationService);
+    }
+
+    @Test
+    void verifyIsIdempotentWhenAlreadyConfirmed() {
+        TrackedSection existing = new TrackedSection();
+        existing.setId(1L);
+        existing.setOwnerToken("abc");
+        existing.setConfirmed(true);
+        when(repository.findById(1L)).thenReturn(Optional.of(existing));
+
+        ResponseEntity<Void> response = controller.verifySection(1L, new VerifyCodeRequest("123456"), "abc");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        verifyNoInteractions(verificationService);
+    }
+
+    @Test
+    void verifyRejectsBlankCode() {
+        TrackedSection existing = new TrackedSection();
+        existing.setId(1L);
+        existing.setOwnerToken("abc");
+        when(repository.findById(1L)).thenReturn(Optional.of(existing));
+
+        ResponseEntity<Void> response = controller.verifySection(1L, new VerifyCodeRequest(" "), "abc");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void verifyRejectsWrongCode() {
+        TrackedSection existing = new TrackedSection();
+        existing.setId(1L);
+        existing.setOwnerToken("abc");
+        existing.setUserContact("+12015550123");
+        when(repository.findById(1L)).thenReturn(Optional.of(existing));
+        when(verificationService.checkCode("+12015550123", "999999")).thenReturn(false);
+
+        ResponseEntity<Void> response = controller.verifySection(1L, new VerifyCodeRequest("999999"), "abc");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(existing.isConfirmed()).isFalse();
+    }
+
+    @Test
+    void verifyConfirmsOnCorrectCode() {
+        TrackedSection existing = new TrackedSection();
+        existing.setId(1L);
+        existing.setOwnerToken("abc");
+        existing.setUserContact("+12015550123");
+        when(repository.findById(1L)).thenReturn(Optional.of(existing));
+        when(verificationService.checkCode("+12015550123", "123456")).thenReturn(true);
+
+        ResponseEntity<Void> response = controller.verifySection(1L, new VerifyCodeRequest("123456"), "abc");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(existing.isConfirmed()).isTrue();
+        verify(repository).save(existing);
+    }
+
+    @Test
+    void verifyReturns404ForUnknownId() {
+        when(repository.findById(99L)).thenReturn(Optional.empty());
+
+        ResponseEntity<Void> response = controller.verifySection(99L, new VerifyCodeRequest("123456"), "anything");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void resendRejectsWrongOwnerToken() {
+        TrackedSection existing = new TrackedSection();
+        existing.setId(1L);
+        existing.setOwnerToken("abc");
+        when(repository.findById(1L)).thenReturn(Optional.of(existing));
+
+        ResponseEntity<Void> response = controller.resendCode(1L, "wrong-token");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        verifyNoInteractions(verificationService);
+    }
+
+    @Test
+    void resendRejectsWhenAlreadyConfirmed() {
+        TrackedSection existing = new TrackedSection();
+        existing.setId(1L);
+        existing.setOwnerToken("abc");
+        existing.setConfirmed(true);
+        when(repository.findById(1L)).thenReturn(Optional.of(existing));
+
+        ResponseEntity<Void> response = controller.resendCode(1L, "abc");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        verifyNoInteractions(verificationService);
+    }
+
+    @Test
+    void resendSendsCodeAgain() {
+        TrackedSection existing = new TrackedSection();
+        existing.setId(1L);
+        existing.setOwnerToken("abc");
+        existing.setUserContact("+12015550123");
+        when(repository.findById(1L)).thenReturn(Optional.of(existing));
+
+        ResponseEntity<Void> response = controller.resendCode(1L, "abc");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        verify(verificationService).sendCode("+12015550123");
+    }
+
+    @Test
+    void resendReturns502WhenSendFails() {
+        TrackedSection existing = new TrackedSection();
+        existing.setId(1L);
+        existing.setOwnerToken("abc");
+        existing.setUserContact("+12015550123");
+        when(repository.findById(1L)).thenReturn(Optional.of(existing));
+        doThrow(new PhoneVerificationService.VerificationSendException("boom", new RuntimeException()))
+                .when(verificationService).sendCode(any());
+
+        ResponseEntity<Void> response = controller.resendCode(1L, "abc");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
     }
 
     @Test

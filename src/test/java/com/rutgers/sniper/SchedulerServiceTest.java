@@ -31,6 +31,7 @@ class SchedulerServiceTest {
         section.setSectionIndex("03608");
         section.setUserContact("+12015550123");
         section.setOpen(currentlyMarkedOpen);
+        section.setConfirmed(true);
         return section;
     }
 
@@ -76,5 +77,33 @@ class SchedulerServiceTest {
         assertThat(section.isOpen()).isFalse();
         verify(smsService, never()).sendSms(any(), any());
         verify(repository, never()).save(any());
+    }
+
+    @Test
+    void doesNotAlertOrPersistWhenSectionOpensButContactIsUnconfirmed() {
+        TrackedSection section = section(false);
+        section.setConfirmed(false);
+
+        scheduler.applyStatus(section, true);
+
+        // Left exactly as it was — isOpen stays false so the very next poll
+        // re-evaluates this section instead of it being marked "already handled".
+        assertThat(section.isOpen()).isFalse();
+        verify(smsService, never()).sendSms(any(), any());
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void alertsOnTheFirstPollAfterConfirmationCatchesUpAnAlreadyOpenSection() {
+        TrackedSection section = section(false);
+        section.setConfirmed(false);
+        scheduler.applyStatus(section, true); // opened while unconfirmed — no-op, per above
+
+        section.setConfirmed(true); // owner verifies
+        scheduler.applyStatus(section, true); // next poll cycle
+
+        assertThat(section.isOpen()).isTrue();
+        verify(smsService).sendSms(eq("+12015550123"), contains("03608"));
+        verify(repository).save(section);
     }
 }
