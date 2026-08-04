@@ -2,10 +2,17 @@ package com.scarletsniper.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
+import java.time.Instant;
+
+// Deliberately @Getter/@Setter rather than @Data: Lombok's generated
+// equals/hashCode/toString on a JPA entity is a known footgun once lazy
+// proxies or relationships enter the picture.
 @Entity
-@Data
+@Getter
+@Setter
 public class TrackedSection {
 
     @Id
@@ -28,6 +35,11 @@ public class TrackedSection {
     private boolean confirmed;
 
     private String userContact;
+
+    // Used by SchedulerService to reap unconfirmed watches that were
+    // registered and then abandoned, so they don't poll Rutgers forever.
+    @JsonIgnore
+    private Instant createdAt;
 
     // Proof of ownership for this watch. Handed to the client once, on
     // creation, and never included in any other response (see addSection

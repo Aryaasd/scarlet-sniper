@@ -21,7 +21,10 @@
 * **SMS notifications:** Integrates with Twilio to send instant alerts when a section opens.
 * **Owner-scoped API:** Each watch is protected by a token issued at creation time — nobody else can see it or delete it, and listing without a token returns nothing.
 * **Phone verification:** A number is never texted until it confirms a code sent via Twilio Verify — registering a watch doesn't mean a stranger's phone starts getting messages.
-* **Abuse throttling:** New watches are rate-limited per IP.
+* **Abuse throttling:** Creation is rate-limited per IP *and* per phone number, and verification attempts are capped so a 6-digit code can't be brute-forced.
+* **At-least-once alerting:** A failed SMS is never recorded as delivered — the section stays unmarked and the alert retries on the next poll.
+* **Self-cleaning:** Registrations abandoned before verification are reaped after 24h instead of polling forever.
+* **Health checks:** `/actuator/health` for uptime monitoring.
 * **Memory optimized:** Tuned to run in containerized environments (like Railway) under strict memory limits.
 
 ---
@@ -108,7 +111,9 @@ curl -X POST http://localhost:8080/api/sections \
 }
 ```
 
-`subject`, `term`, `year`, and `campus` are optional and default to Fall 2025 Computer Science at New Brunswick (`198` / `9` / `2025` / `NB`) — pass your own to track a section in any other department or term. Creation is rate-limited to 5 new watches per IP per 10 minutes.
+`subject`, `term`, `year`, and `campus` are optional and default to Fall 2025 Computer Science at New Brunswick (`198` / `9` / `2025` / `NB`) — pass your own to track a section in any other department or term.
+
+All fields are validated server-side (`sectionIndex` must be 5 digits, `userContact` must be US E.164 `+1##########`), so malformed input returns `400` rather than reaching the database. Creation is limited to **5 per IP / 10 min** and **3 per phone number / hour** — the second limit is what stops someone spreading requests across networks to spam one person with verification texts. Exceeding either returns `429`.
 
 **Confirm the phone number**
 
@@ -121,12 +126,14 @@ curl -X POST http://localhost:8080/api/sections/1/verify \
   -d '{"code": "123456"}'
 ```
 
-`204` on success, `422` on a wrong or expired code, `403` on a bad owner token. If the code expired, resend it:
+`204` on success, `422` on a wrong or expired code, `403` on a bad owner token, `400` on a malformed one. After **5 wrong attempts within 15 minutes** the endpoint returns `429` and stops calling Twilio — a 6-digit code is only a million combinations, so without this the owner-token holder could simply guess it. If the code expired, resend it:
 
 ```bash
 curl -X POST http://localhost:8080/api/sections/1/resend-code \
   -H "X-Owner-Token: 6a9b3e6c-1c09-4ab0-9b31-57ac2d55d334"
 ```
+
+A **successful** resend clears the attempt counter, since the old code is now void. A failed one (`502`) deliberately does not — otherwise the lockout could be bypassed by forcing send failures. Resends share the per-phone budget.
 
 Without `TWILIO_VERIFY_SERVICE_SID` configured (the local-dev default), sections come back `confirmed: true` immediately and there's nothing to verify.
 
@@ -148,7 +155,15 @@ curl -X DELETE http://localhost:8080/api/sections/1 \
   -H "X-Owner-Token: 6a9b3e6c-1c09-4ab0-9b31-57ac2d55d334"
 ```
 
-Once a section is confirmed, the scheduler polls its subject/term/year/campus combination automatically and texts `userContact` when it opens. Unconfirmed sections are still polled — the moment you confirm, the next poll catches an already-open section instead of waiting for it to close and reopen.
+Once a section is confirmed, the scheduler polls its subject/term/year/campus combination automatically and texts `userContact` when it opens. Unconfirmed sections are still polled — the moment you confirm, the next poll catches an already-open section instead of waiting for it to close and reopen. Watches left unconfirmed for 24 hours are deleted.
+
+If the alert SMS fails to send, the section is deliberately *not* marked as open, so the next poll retries rather than silently recording an alert that never arrived.
+
+**Health check**
+
+```bash
+curl http://localhost:8080/actuator/health
+```
 
 ---
 
