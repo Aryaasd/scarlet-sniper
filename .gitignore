@@ -13,3 +13,10 @@ bin/
 .DS_Store
 *.iml
 *.log
+
+# Local secrets — never commit
+src/main/resources/application-local.properties
+.env
+
+# Stray archives
+*.zip
