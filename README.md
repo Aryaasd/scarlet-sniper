@@ -14,7 +14,7 @@
 
 ---
 
-## 🚀 Features
+##  Features
 
 * **Automated sniping:** Polls the Rutgers Schedule of Classes API for any subject/term/year/campus combination currently being tracked — not hardcoded to one department.
 * **Database persistence:** Stores tracking requests in PostgreSQL, schema-managed by Flyway.
@@ -29,7 +29,7 @@
 
 ---
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 | Layer | Technology |
 | --- | --- |
@@ -43,7 +43,7 @@
 
 ---
 
-## ⚙️ Configuration
+##  Configuration
 
 The application reads all credentials from the environment. Set these in your deployment platform, or use the `local` profile below to run without any of them.
 
@@ -62,7 +62,7 @@ The application reads all credentials from the environment. Set these in your de
 
 ---
 
-## 📦 Running Locally
+##  Running Locally
 
 **1. Clone the repository**
 
@@ -91,7 +91,7 @@ To run against a real PostgreSQL database instead, export the environment variab
 
 ---
 
-## 📡 API
+##  API
 
 Sections are registered through the REST API at `/api`. Every watch is protected by an **owner token** issued when you create it — hold onto it, it's the only way to list or delete that watch later, and it is never sent back to you again after creation.
 
@@ -167,7 +167,7 @@ curl http://localhost:8080/actuator/health
 
 ---
 
-## ☁️ Deployment (Railway)
+##  Deployment (Railway)
 
 1. **Connect GitHub:** Link this repository to a new Railway service.
 2. **Add a database:** Add a PostgreSQL service in Railway. Flyway applies the schema automatically on first boot.
@@ -180,7 +180,7 @@ curl http://localhost:8080/actuator/health
 
 ---
 
-## ⚠️ Disclaimer
+##  Disclaimer
 
 This tool is for educational purposes. Please use it responsibly and comply with the university's API usage policies to avoid rate limiting or IP bans.
 
